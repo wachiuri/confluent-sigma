@@ -31,9 +31,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serializer;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -42,7 +40,7 @@ public class SigmaRule implements Serializable {
     private String description;
     private String id;
     private String author;
-    private List<String> references = new ArrayList<>();
+    //private List<String> references = new ArrayList<>();
     private LogSource logsource = new LogSource();
     private DetectionsManager detectionsManager = new DetectionsManager();
     private ConditionsManager conditionsManager = new ConditionsManager();
@@ -81,13 +79,15 @@ public class SigmaRule implements Serializable {
         this.author = author;
     }
 
-    public List<String> getReferences() {
+    /*public List<String> getReferences() {
         return references;
     }
 
     public void setReferences(List<String> references) {
         this.references = references;
     }
+    *
+     */
 
     public DetectionsManager getDetectionsManager() { return detectionsManager; }
 
@@ -141,7 +141,7 @@ public class SigmaRule implements Serializable {
         this.description = parsedSigmaRule.getDescription();
         this.id = parsedSigmaRule.getId();
         this.author = parsedSigmaRule.getAuthor();
-        this.references = parsedSigmaRule.getReferences();
+        //this.references = parsedSigmaRule.getReferences();
         this.logsource = parsedSigmaRule.getLogsource();
         this.kafkaRule = parsedSigmaRule.getKafka();
     }

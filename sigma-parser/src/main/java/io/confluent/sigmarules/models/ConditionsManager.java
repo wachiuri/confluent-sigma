@@ -20,17 +20,18 @@
 package io.confluent.sigmarules.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class ConditionsManager {
-    final static Logger logger = LogManager.getLogger(ConditionsManager.class);
-    private List<SigmaCondition> conditions = new ArrayList<>();
+import java.io.Serializable;
+import java.util.ArrayList;
 
-    public List<SigmaCondition> getConditions() {
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class ConditionsManager implements Serializable {
+    final static Logger logger = LogManager.getLogger(ConditionsManager.class);
+    private ArrayList<SigmaCondition> conditions = new ArrayList<>();
+
+    public ArrayList<SigmaCondition> getConditions() {
         return this.conditions;
     }
 

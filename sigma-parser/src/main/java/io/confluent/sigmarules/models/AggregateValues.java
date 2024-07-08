@@ -19,7 +19,9 @@
 
 package io.confluent.sigmarules.models;
 
-public class AggregateValues {
+import java.io.Serializable;
+
+public class AggregateValues implements Serializable {
     private String groupBy;
     private String distinctValue;
     private String operation;

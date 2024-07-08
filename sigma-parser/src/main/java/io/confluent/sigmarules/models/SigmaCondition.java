@@ -22,7 +22,9 @@ package io.confluent.sigmarules.models;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class SigmaCondition {
+import java.io.Serializable;
+
+public class SigmaCondition implements Serializable {
     final static Logger logger = LogManager.getLogger(SigmaCondition.class);
 
     private String conditionName = "";

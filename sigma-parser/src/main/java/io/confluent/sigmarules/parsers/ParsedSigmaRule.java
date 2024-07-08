@@ -26,16 +26,18 @@ import io.confluent.kafka.serializers.KafkaJsonDeserializer;
 import io.confluent.kafka.serializers.KafkaJsonSerializer;
 import io.confluent.sigmarules.models.KafkaRule;
 import io.confluent.sigmarules.models.LogSource;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serializer;
 
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class ParsedSigmaRule {
+public class ParsedSigmaRule implements Serializable {
     private String title;
     private String description;
     private String id;
@@ -77,13 +79,14 @@ public class ParsedSigmaRule {
         this.author = author;
     }
 
-    public List<String> getReferences() {
+    /*public List<String> getReferences() {
         return references;
     }
 
     public void setReferences(List<String> references) {
         this.references = references;
-    }
+    }*/
+
     public Map<String, Object> getDetection() {
         return detection;
     }

@@ -20,15 +20,17 @@
 package io.confluent.sigmarules.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class DetectionsManager {
+public class DetectionsManager implements Serializable {
     final static Logger logger = LogManager.getLogger(DetectionsManager.class);
 
     private Map<String, SigmaDetections> detections = new HashMap<>();

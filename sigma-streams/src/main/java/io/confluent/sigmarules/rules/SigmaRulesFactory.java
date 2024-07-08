@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- *
+ * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -26,20 +26,15 @@ import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.parsers.ParsedSigmaRule;
 import io.confluent.sigmarules.parsers.SigmaRuleParser;
 import io.confluent.sigmarules.streams.StreamManager;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 public class SigmaRulesFactory implements SigmaRuleObserver {
     final static Logger logger = LogManager.getLogger(SigmaRulesFactory.class.getName());
@@ -58,7 +53,9 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
 
 
     // This should only be called for testing as it does not load the rules store
-    public SigmaRulesFactory() { rulesParser = new SigmaRuleParser(); }
+    public SigmaRulesFactory() {
+        rulesParser = new SigmaRuleParser();
+    }
 
     public SigmaRulesFactory(Properties properties) {
         initialize(properties);
@@ -121,7 +118,7 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
 
         if (immediateCallback) {
             for (Map.Entry<String, SigmaRule> entry : sigmaRules.entrySet()) {
-                observer.processRuleUpdate(entry.getValue(), null,true);
+                observer.processRuleUpdate(entry.getValue(), null, true);
             }
         }
     }
@@ -157,20 +154,27 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
      */
     private void getRulesfromStore() {
         this.sigmaRulesStore.getRules().forEach((title, rule) -> {
-           try {
+            try {
                 addRule(title, rulesParser.parseRule(rule));
 
             } catch (IOException | InvalidSigmaRuleException | SigmaRuleParserException e) {
-               logger.error("Exception thrown for rule: " + title + " rule: " + rule);
+                logger.error("Exception thrown for rule: " + title + " rule: " + rule);
                 e.printStackTrace();
             }
         });
     }
 
+    public SigmaRule addRule(String rule) throws IOException, InvalidSigmaRuleException, SigmaRuleParserException {
+        SigmaRule sigmaRule = rulesParser.parseRule(rule);
+        addRule(sigmaRule.getTitle(), sigmaRule);
+        return sigmaRule;
+    }
+
     public SigmaRule addRule(String title, String sigmaRule)
-        throws IOException, InvalidSigmaRuleException, SigmaRuleParserException {
+            throws IOException, InvalidSigmaRuleException, SigmaRuleParserException {
         return addRule(title, rulesParser.parseRule(sigmaRule));
     }
+
     /**
      * Checks the rule to see if it matches the filters defined. If it matches, a rule will
      * get parsed and a SigmaRule object will be created.
@@ -178,7 +182,7 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
      * @param sigmaRule as a string
      */
     public SigmaRule addRule(String title, SigmaRule sigmaRule)
-        throws IOException, InvalidSigmaRuleException, SigmaRuleParserException {
+            throws IOException, InvalidSigmaRuleException, SigmaRuleParserException {
         if (shouldBeFiltered(sigmaRule)) {
             logger.info(title + " will not be loaded.  It does not match the filtered rules " +
                     "condition.");
@@ -189,8 +193,8 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
 
         // create the output topic if it is defined in the rule
         if (streamManager != null &&
-            sigmaRule.getKafkaRule() != null &&
-            sigmaRule.getKafkaRule().getOutputTopic() != null) {
+                sigmaRule.getKafkaRule() != null &&
+                sigmaRule.getKafkaRule().getOutputTopic() != null) {
             streamManager.createTopic(sigmaRule.getKafkaRule().getOutputTopic());
         }
 
@@ -215,7 +219,7 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
     }
 
     public boolean isRuleFiltered(String title) {
-      return !sigmaRules.containsKey(title);
+        return !sigmaRules.containsKey(title);
     }
 
     /**
@@ -256,9 +260,13 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
         return sigmaRules;
     }
 
-    public SigmaRule getRule(String title) { return sigmaRules.get(title); }
+    public SigmaRule getRule(String title) {
+        return sigmaRules.get(title);
+    }
 
-    public String getRuleAsYaml(String title) { return sigmaRulesStore.getRuleAsYaml(title); }
+    public String getRuleAsYaml(String title) {
+        return sigmaRulesStore.getRuleAsYaml(title);
+    }
 
     private class InvalidRulesException extends RuntimeException {
         public InvalidRulesException(String s) {

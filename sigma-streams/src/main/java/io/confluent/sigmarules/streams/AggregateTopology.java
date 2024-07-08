@@ -20,6 +20,7 @@
 package io.confluent.sigmarules.streams;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.Configuration;
 import io.confluent.sigmarules.models.AggregateValues;
 import io.confluent.sigmarules.models.DetectionResults;
@@ -27,21 +28,17 @@ import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.parsers.AggregateParser;
 import io.confluent.sigmarules.rules.SigmaRuleCheck;
 import io.confluent.sigmarules.rules.SigmaRulesFactory;
+import org.apache.kafka.common.serialization.Serde;
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.kstream.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.apache.kafka.common.serialization.Serde;
-import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.kstream.Grouped;
-import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.kstream.Materialized;
-import org.apache.kafka.streams.kstream.Produced;
-import org.apache.kafka.streams.kstream.SlidingWindows;
-import org.apache.kafka.streams.kstream.Windowed;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 public class AggregateTopology extends SigmaBaseTopology {
     final static Logger logger = LogManager.getLogger(AggregateTopology.class);
@@ -94,11 +91,10 @@ public class AggregateTopology extends SigmaBaseTopology {
                 .filter((k, results) -> doStreamFiltering(results.getRule(), results))
                 .map((key, value) -> {
                     streamManager.setNumMatches(streamManager.getNumMatches() + 1);
-                    return new KeyValue<>("", buildResults(value.getRule(), value.getSourceData()));
+                    return new KeyValue<>("", buildResults(value.getRule(), (ObjectNode) value.getSourceData()));
                 })
                 .to(outputTopic,
                     Produced.with(Serdes.String(), DetectionResults.getJsonSerde()));
-
             }
         }
     }

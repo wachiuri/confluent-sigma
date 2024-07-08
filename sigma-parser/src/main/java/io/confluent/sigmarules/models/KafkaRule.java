@@ -19,16 +19,16 @@
 
 package io.confluent.sigmarules.models;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.io.Serializable;
+import java.util.HashMap;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class KafkaRule {
+public class KafkaRule implements Serializable {
     private String inputTopic;
     private String outputTopic;
-    private Map<String, String> customFields = new HashMap<>();
+    private HashMap<String, String> customFields = new HashMap<>();
 
     public String getOutputTopic() {
         return outputTopic;
@@ -46,11 +46,11 @@ public class KafkaRule {
         this.inputTopic = inputTopic;
     }
 
-    public Map<String, String> getCustomFields() {
+    public HashMap<String, String> getCustomFields() {
         return customFields;
     }
 
-    public void setCustomFields(Map<String, String> customFields) {
+    public void setCustomFields(HashMap<String, String> customFields) {
         this.customFields = customFields;
     }
 

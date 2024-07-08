@@ -26,12 +26,13 @@ import com.jayway.jsonpath.Option;
 import com.jayway.jsonpath.spi.json.JacksonJsonProvider;
 import com.jayway.jsonpath.spi.mapper.JacksonMappingProvider;
 import io.confluent.sigmarules.appState.SigmaAppInstanceStore;
+import io.confluent.sigmarules.config.SigmaOptions;
 import io.confluent.sigmarules.config.SigmaPropertyEnum;
 import io.confluent.sigmarules.flink.serde.JsonNodeDeserializationSchema;
-import io.confluent.sigmarules.flink.serde.SigmaRuleDeserializationSchema;
 import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.rules.SigmaRuleFactoryObserver;
 import io.confluent.sigmarules.rules.SigmaRulesFactory;
+import io.confluent.sigmarules.tools.SigmaRuleLoader;
 import io.confluent.sigmarules.utilities.JsonUtils;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.connector.kafka.source.KafkaSource;
@@ -48,19 +49,22 @@ import org.apache.kafka.streams.kstream.KStream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Properties;
 import java.util.UUID;
 
 public class SigmaStream extends StreamManager {
     final static Logger logger = LogManager.getLogger(SigmaStream.class);
     final static String instanceId = UUID.randomUUID().toString();
+    private final String rulesTopic;
 
     private KafkaStreams streams;
     StreamExecutionEnvironment env;
     private SigmaRulesFactory ruleFactory;
     private String inputTopic;
     private String outputTopic;
-    private String rulesTopic;
     private Boolean firstMatch;
     private SigmaAppInstanceStore instanceStore;
     private final Configuration jsonPathConf = createJsonPathConfig();
@@ -108,22 +112,44 @@ public class SigmaStream extends StreamManager {
         createTopic(inputTopic);
         createTopic(outputTopic);
 
-        Topology topology = createTopology();
+        try {
+            InputStream input = new FileInputStream("/Paper/public/confluent-sigma-1.3.0/sigma-streams/config/sigma.properties");
+            Properties properties = new Properties();
+
+            properties.load(input);
+
+            SigmaOptions sigmaOptions = new SigmaOptions();
+            sigmaOptions.setProperties(properties);
+
+            SigmaRuleLoader sigmaRuleLoader = new SigmaRuleLoader(sigmaOptions);
+
+            sigmaRuleLoader.loadSigmaDirectory("/Paper/public/confluent-sigma-1.3.0/sigma-streams/config/rules");
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        //Topology topology = createTopology();
 
         env = StreamExecutionEnvironment.getExecutionEnvironment();
         createFlinkTopology(env);
 
-        streams = new KafkaStreams(topology, getStreamProperties());
+        //streams = new KafkaStreams(topology, getStreamProperties());
 
-        instanceStore.register();
+        //instanceStore.register();
 
-        streams.cleanUp();
-        streams.start();
+        //streams.cleanUp();
+        //streams.start();
 
+        try {
+            env.execute();
+        } catch (Exception e) {
+            logger.error("Error executing flink stream execution environment", e);
+        }
 
         // shutdown hook to correctly close the streams application
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            streams.close();
+            //streams.close();
             try {
                 env.close();
             } catch (Exception e) {
@@ -157,25 +183,9 @@ public class SigmaStream extends StreamManager {
                 )
                 .name("Kafka source topic " + inputTopic);
 
-        KafkaSource<SigmaRule> rules = KafkaSource.<SigmaRule>builder()
-                .setBootstrapServers(properties.getProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG))
-                .setTopics(rulesTopic)
-                .setStartingOffsets(OffsetsInitializer.earliest())
-                .setValueOnlyDeserializer(new SigmaRuleDeserializationSchema())
-                .build();
-
-        DataStream<SigmaRule> rulesStream = env
-                .fromSource(
-                        rules,
-                        WatermarkStrategy.noWatermarks(),
-                        "Kafka rule Topic: " + rulesTopic
-                )
-                .name("Kafka rule topic " + rulesTopic);
-
-
         // simple rules
         SimpleFlinkTopology simpleFlinkTopology = new SimpleFlinkTopology();
-        simpleFlinkTopology.createSimpleFlinkTopology(this, log, rulesStream, outputTopic,
+        simpleFlinkTopology.createSimpleFlinkTopology(this, log, ruleFactory, outputTopic,
                 jsonPathConf, firstMatch);
 /*
         // aggregate rules
@@ -184,12 +194,6 @@ public class SigmaStream extends StreamManager {
         aggregateFlinkTopology.createAggregateFlinkTopology(this, log, ruleFactory, outputTopic,
                 jsonPathConf);
         */
-
-        try {
-            env.execute();
-        } catch (Exception e) {
-            logger.error("Error executing flink stream execution environment", e);
-        }
     }
 
     // iterates through each rule and publishes to output topic for

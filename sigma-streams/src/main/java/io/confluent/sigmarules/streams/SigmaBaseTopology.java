@@ -1,16 +1,15 @@
 package io.confluent.sigmarules.streams;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.confluent.sigmarules.models.DetectionResults;
 import io.confluent.sigmarules.models.SigmaDetection;
 import io.confluent.sigmarules.models.SigmaDetections;
 import io.confluent.sigmarules.models.SigmaRule;
+import org.apache.kafka.streams.processor.TopicNameExtractor;
 
 import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.Map;
-
-import org.apache.kafka.streams.processor.TopicNameExtractor;
 
 public class SigmaBaseTopology {
 
@@ -20,7 +19,7 @@ public class SigmaBaseTopology {
         this.defaultOutputTopic = defaultOutputTopic;
     }
 
-    protected DetectionResults buildResults(SigmaRule rule, JsonNode sourceData) {
+    protected DetectionResults buildResults(SigmaRule rule, ObjectNode sourceData) {
         DetectionResults results = new DetectionResults();
         results.setSourceData(sourceData);
         Map<String, String> customFields = new HashMap<>();

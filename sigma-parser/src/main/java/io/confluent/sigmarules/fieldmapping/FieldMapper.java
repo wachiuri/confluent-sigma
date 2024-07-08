@@ -22,12 +22,13 @@ package io.confluent.sigmarules.fieldmapping;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.confluent.sigmarules.models.SigmaFields;
+
 import java.io.IOException;
+import java.io.Serializable;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
-public class FieldMapper {
+public class FieldMapper implements Serializable {
     private SigmaFields sigmaFields = new SigmaFields();
 
     public FieldMapper(String filename) throws IOException {

@@ -19,24 +19,24 @@
 
 package io.confluent.sigmarules.models;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class SigmaDetection {
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class SigmaDetection implements Serializable {
     final static Logger logger = LogManager.getLogger(SigmaDetection.class);
 
-    private String name = ""; // TODO: This could be a list in the mapped file
+    private String name = ""; // TODO: This could be a ArrayList in the mapped file
     private String sigmaName = "";
-    private List<ModifierType> modifiers = new ArrayList<>(); //contains, beginswith, endswith
-    private List<String> detectionValues = new ArrayList<>();
+    private ArrayList<ModifierType> modifiers = new ArrayList<>(); //contains, beginswith, endswith
+    private ArrayList<String> detectionValues = new ArrayList<>();
     private Map<String, String> regexMappedFields = new HashMap<>(); //groups from regex or other fields
     private Boolean matchAll = false;
 
@@ -48,7 +48,7 @@ public class SigmaDetection {
         this.name = name;
     }
 
-    public List<String> getValues() {
+    public ArrayList<String> getValues() {
         return detectionValues;
     }
 
@@ -168,7 +168,7 @@ public class SigmaDetection {
         return "DetectionModel [name=" + name + ", values=" + detectionValues + "]";
     }
 
-    public List<ModifierType> getModifiers() {
+    public ArrayList<ModifierType> getModifiers() {
         return modifiers;
     }
 

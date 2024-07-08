@@ -19,17 +19,17 @@
 
 package io.confluent.sigmarules.models;
 
+import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.List;
 
-public class SigmaDetections {
-    private List<SigmaDetection> detections = new ArrayList<>();
+public class SigmaDetections implements Serializable {
+    private ArrayList<SigmaDetection> detections = new ArrayList<>();
 
-    public List<SigmaDetection> getDetections() {
+    public ArrayList<SigmaDetection> getDetections() {
         return detections;
     }
 
-    public void setDetections(List<SigmaDetection> detections) {
+    public void setDetections(ArrayList<SigmaDetection> detections) {
         this.detections = detections;
     }
 

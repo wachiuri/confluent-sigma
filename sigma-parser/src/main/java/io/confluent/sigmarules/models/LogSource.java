@@ -21,8 +21,10 @@ package io.confluent.sigmarules.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.io.Serializable;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class LogSource {
+public class LogSource implements Serializable {
     private String product;
     private String service;
 

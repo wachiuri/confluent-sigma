@@ -21,20 +21,22 @@
 package io.confluent.sigmarules.streams;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.Configuration;
 import io.confluent.sigmarules.models.DetectionResults;
 import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.rules.SigmaRuleCheck;
 import io.confluent.sigmarules.rules.SigmaRulesFactory;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 public class SimpleTopology extends SigmaBaseTopology {
     private static final long MINUTE_IN_MILLIS = 60 * 1000;
@@ -60,7 +62,7 @@ public class SimpleTopology extends SigmaBaseTopology {
               streamManager.setRecordsProcessed(streamManager.getRecordsProcessed() + 1);
 
               if (ruleCheck.isValid(rule, sourceData, jsonPathConf)) {
-                results.add(buildResults(rule, sourceData));
+                results.add(buildResults(rule, (ObjectNode) sourceData));
 
                 if (logger.getLevel().isLessSpecificThan(Level.WARN)) {
                     matches++;
