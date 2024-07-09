@@ -76,14 +76,14 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
         rulesParser = new SigmaRuleParser(fieldMapFile);
 
         // create the rules cache
-        sigmaRulesStore = new SigmaRulesStore(properties);
+        sigmaRulesStore = new SigmaFileRulesStore();
         sigmaRulesStore.addObserver(this);
 
         // set the filters from the properties file
         setFiltersFromProperties(properties);
 
         // load the rules that apply to this processor
-        getRulesfromStore();
+        //getRulesfromStore();
     }
 
     public void setFiltersFromProperties(Properties properties) {
@@ -125,7 +125,8 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
 
     /**
      * Handles any new rules that are added to the Sigma Rules topic
-     * @param title of the rule
+     *
+     * @param title   of the rule
      * @param newRule as a string
      * @param oldRule as a string
      */
@@ -178,7 +179,8 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
     /**
      * Checks the rule to see if it matches the filters defined. If it matches, a rule will
      * get parsed and a SigmaRule object will be created.
-     * @param title of the rule
+     *
+     * @param title     of the rule
      * @param sigmaRule as a string
      */
     public SigmaRule addRule(String title, SigmaRule sigmaRule)
@@ -205,6 +207,7 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
      * Should this rule be filtered out?  There is a combination of factors to determine if a
      * rule should be used like the product and service of the rule and potentially a list of
      * specified titles.  Could be other ways in the future.
+     *
      * @param sigmaRule rule to check
      * @return true if the rule should be filtered out
      */
@@ -226,6 +229,7 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
      * Check to see whether there is a product and service specified and if there is whether the
      * SigmaRule matches. If a product and service is not specified then any value is considered
      * valid.
+     *
      * @param rule The SigmaRule to check
      * @return whether the SigmaRule matches the provided product and service.  Default to true
      * if not specified
@@ -258,6 +262,15 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
 
     public Map<String, SigmaRule> getSigmaRules() {
         return sigmaRules;
+    }
+
+    public Stream<Map.Entry<String, SigmaRule>> getSigmaRulesStream() {
+        return this.sigmaRulesStore.getRulesStream()
+                .map(parsedSigmaRuleEntry -> {
+                    SigmaRule sigmaRule = new SigmaRule();
+                    sigmaRule.copyParsedSigmaRule(parsedSigmaRuleEntry.getValue());
+                    return Map.entry(parsedSigmaRuleEntry.getKey(), sigmaRule);
+                });
     }
 
     public SigmaRule getRule(String title) {

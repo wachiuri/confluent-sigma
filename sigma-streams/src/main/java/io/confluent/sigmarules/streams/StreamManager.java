@@ -19,12 +19,6 @@
 
 package io.confluent.sigmarules.streams;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -35,6 +29,9 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.util.*;
+import java.util.concurrent.ExecutionException;
 
 public class StreamManager {
     final static Logger logger = LogManager.getLogger(StreamManager.class.getName());
@@ -54,7 +51,7 @@ public class StreamManager {
         this.properties.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 1000);
 
         try {
-            client = AdminClient.create(this.properties);
+            //client = AdminClient.create(this.properties);
         } catch (KafkaException e) {
             logger.error(e);
         }

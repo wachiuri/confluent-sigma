@@ -24,20 +24,15 @@ import io.confluent.sigmarules.exceptions.SigmaRuleParserException;
 import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.parsers.ParsedSigmaRule;
 import io.confluent.sigmarules.parsers.SigmaRuleParser;
+import io.confluent.sigmarules.rules.SigmaFileRulesStore;
 import io.confluent.sigmarules.rules.SigmaRulesStore;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.List;
 import java.util.Set;
-
-import javax.annotation.PostConstruct;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public class SigmaRuleController {
@@ -50,7 +45,7 @@ public class SigmaRuleController {
 
     @PostConstruct
     private void initialize() {
-        rulesStore = new SigmaRulesStore(properties.getProperties());
+        rulesStore = new SigmaFileRulesStore();
     }
 
     @GetMapping({"/sigmaTitles"})
