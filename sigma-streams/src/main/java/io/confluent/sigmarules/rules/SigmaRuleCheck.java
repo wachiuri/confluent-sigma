@@ -54,18 +54,24 @@ public class SigmaRuleCheck implements Serializable {
     }
 
     public Boolean isValid(SigmaRule rule, JsonNode data, Configuration jsonPathConf) {
-        if (rule != null)
-            return checkConditions(rule, data, jsonPathConf);
+        boolean result;
+        if (rule != null) {
+            result = checkConditions(rule, data, jsonPathConf);
+            if (result) {
+                logger.debug("match found for rule: " + rule + " data: " + data);
+            }
+        } else {
+            result = false;
+            logger.error("Invalid Rule");
+        }
 
-        logger.error("Invalid Rule");
-        return false;
+        return result;
     }
 
     private Boolean checkConditions(SigmaRule rule, JsonNode sourceData, Configuration jsonPathConf) {
         for (SigmaCondition c : rule.getConditionsManager().getConditions()) {
             if (!c.getAggregateCondition()) {
                 if (checkCondition(c, rule.getDetectionsManager(), sourceData, jsonPathConf)) {
-                    logger.debug("source data: " + sourceData.toString());
                     return true;
                 }
             }
@@ -121,9 +127,6 @@ public class SigmaRuleCheck implements Serializable {
             }
 
             return validDetections;
-        } else {
-            logger.info("No detections for condition: " + condition.getConditionName() +
-                    " source: " + sourceData.toString());
         }
 
         return false;

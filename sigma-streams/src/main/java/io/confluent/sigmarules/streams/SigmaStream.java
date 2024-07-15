@@ -30,16 +30,16 @@ import io.confluent.sigmarules.appState.SigmaAppInstanceStore;
 import io.confluent.sigmarules.config.SigmaPropertyEnum;
 import io.confluent.sigmarules.exceptions.InvalidSigmaRuleException;
 import io.confluent.sigmarules.exceptions.SigmaRuleParserException;
-import io.confluent.sigmarules.flink.streamformat.FileStreamFormat;
+import io.confluent.sigmarules.fieldmapping.FieldMapper;
 import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.parsers.SigmaRuleParser;
 import io.confluent.sigmarules.rules.SigmaRuleFactoryObserver;
 import io.confluent.sigmarules.rules.SigmaRulesFactory;
 import io.confluent.sigmarules.utilities.JsonUtils;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.connector.file.src.FileSource;
-import org.apache.flink.connector.file.src.reader.TextLineInputFormat;
-import org.apache.flink.core.fs.Path;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.kafka.common.serialization.Serdes;
@@ -52,7 +52,7 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.time.Duration;
+import java.io.IOException;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
@@ -111,22 +111,24 @@ public class SigmaStream extends StreamManager {
     }
 
     public void startStream() {
-        //createTopic(inputTopic);
-        //createTopic(outputTopic);
-
-        //Topology topology = createTopology();
-
-        env = StreamExecutionEnvironment.getExecutionEnvironment();
-        createFlinkTopology(env);
-
-        //streams = new KafkaStreams(topology, getStreamProperties());
-
-        //instanceStore.register();
-
-        //streams.cleanUp();
-        //streams.start();
 
         try {
+            createTopic(inputTopic);
+            createTopic(outputTopic);
+            createTopic(rulesTopic);
+
+            //Topology topology = createTopology();
+
+            env = StreamExecutionEnvironment.createLocalEnvironment();
+            createFlinkTopology(env);
+
+            //streams = new KafkaStreams(topology, getStreamProperties());
+
+            //instanceStore.register();
+
+            //streams.cleanUp();
+            //streams.start();
+
             env.execute();
         } catch (Exception e) {
             logger.error("Error executing flink stream execution environment", e);
@@ -138,7 +140,7 @@ public class SigmaStream extends StreamManager {
             try {
                 env.close();
             } catch (Exception e) {
-                logger.error("error shutting down flink stream execution environment");
+                logger.error("error shutting down flink stream execution environment", e);
             }
         }));
     }
@@ -148,17 +150,18 @@ public class SigmaStream extends StreamManager {
         try {
             env.close();
         } catch (Exception e) {
-            logger.error("error closing flink stream execution environment");
+            logger.error("error closing flink stream execution environment", e);
         }
     }
 
-    public void createFlinkTopology(final StreamExecutionEnvironment env) {
+    public void createFlinkTopology(final StreamExecutionEnvironment env) throws IOException {
 
-        FileSource<String> dataSource = FileSource.forRecordStreamFormat(
-                        new TextLineInputFormat(),
-                        new Path("/Paper/public/confluent-sigma-1.3.0/sigma-streams/config/sample_data/")
-                )
-                .monitorContinuously(Duration.ofSeconds(1))
+        KafkaSource<String> dataSource = KafkaSource.<String>builder()
+                .setBootstrapServers(properties.getProperty(SigmaPropertyEnum.BOOTSTRAP_SERVERS.toString()))
+                .setTopics(inputTopic)
+                .setGroupId(instanceId)
+                .setStartingOffsets(OffsetsInitializer.earliest())
+                .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
 
         SingleOutputStreamOperator<ObjectNode> dataStream = env.fromSource(
@@ -167,11 +170,12 @@ public class SigmaStream extends StreamManager {
                 "logs"
         ).map(string -> (ObjectNode) new ObjectMapper().readTree(string));
 
-        FileSource<String> ruleSource = FileSource.forRecordStreamFormat(
-                        new FileStreamFormat(),
-                        new Path("/var/cache/sigmarules/")
-                )
-                .monitorContinuously(Duration.ofSeconds(1))
+        KafkaSource<String> ruleSource = KafkaSource.<String>builder()
+                .setBootstrapServers(properties.getProperty(SigmaPropertyEnum.BOOTSTRAP_SERVERS.toString()))
+                .setTopics(rulesTopic)
+                .setGroupId(instanceId)
+                .setStartingOffsets(OffsetsInitializer.earliest())
+                .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
 
         SingleOutputStreamOperator<SigmaRule> ruleStream = env.fromSource(
@@ -182,7 +186,12 @@ public class SigmaStream extends StreamManager {
                 .filter(string -> !string.isBlank())
                 .map(fileContent -> {
                     try {
-                        SigmaRuleParser sigmaRuleParser = new SigmaRuleParser();
+                        SigmaRuleParser sigmaRuleParser = new SigmaRuleParser(
+                                new FieldMapper(
+                                        "D:\\Paper\\public\\confluent-sigma-1.3.0\\demo\\config\\zeek.yml"
+                                )
+                        );
+
                         return sigmaRuleParser.parseRule(fileContent);
                     } catch (InvalidSigmaRuleException | SigmaRuleParserException e) {
                         logger.log(Level.ERROR, "Error parsing rule: " + fileContent, e);
@@ -195,13 +204,13 @@ public class SigmaStream extends StreamManager {
         SimpleFlinkTopology simpleFlinkTopology = new SimpleFlinkTopology();
         simpleFlinkTopology.createSimpleFlinkTopology(this, dataStream, ruleStream, outputTopic,
                 jsonPathConf, firstMatch);
-/*
-        // aggregate rules
 
+        // aggregate rules
         AggregateFlinkTopology aggregateFlinkTopology = new AggregateFlinkTopology();
-        aggregateFlinkTopology.createAggregateFlinkTopology(this, log, ruleFactory, outputTopic,
+        aggregateFlinkTopology.createAggregateFlinkTopology(this, dataStream, ruleStream, outputTopic,
                 jsonPathConf);
-        */
+
+
     }
 
     // iterates through each rule and publishes to output topic for

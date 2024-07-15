@@ -23,25 +23,18 @@ package io.confluent.sigmarules.streams;
 import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.Configuration;
+import io.confluent.sigmarules.flink.sink.ElasticSearch5Sink;
 import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.rules.SigmaRuleCheck;
 import org.apache.flink.api.common.functions.JoinFunction;
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.common.serialization.SimpleStringEncoder;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.configuration.MemorySize;
-import org.apache.flink.connector.file.sink.FileSink;
-import org.apache.flink.core.fs.Path;
 import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.functions.sink.filesystem.rollingpolicies.DefaultRollingPolicy;
 import org.apache.flink.streaming.api.windowing.assigners.GlobalWindows;
-import org.apache.logging.log4j.Level;
+import org.apache.flink.streaming.api.windowing.triggers.CountTrigger;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Objects;
+import java.io.IOException;
 
 public class SimpleFlinkTopology extends SigmaBaseTopology {
     private static final long MINUTE_IN_MILLIS = 60 * 1000;
@@ -52,17 +45,27 @@ public class SimpleFlinkTopology extends SigmaBaseTopology {
 
     public void createSimpleFlinkTopology(StreamManager streamManager, DataStream<ObjectNode> dataStream,
                                           DataStream<SigmaRule> ruleStream, String outputTopic, Configuration jsonPathConf,
-                                          Boolean firstMatch) {
+                                          Boolean firstMatch) throws IOException {
 
         setDefaultOutputTopic(outputTopic);
 
         SigmaRuleCheck sigmaRuleCheck = new SigmaRuleCheck();
+
+        String elasticSearchHost = streamManager.getStreamProperties().getProperty("elasticsearch.host");
+        int elasticSearchPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.port"));
+        String elasticSearchIndex = streamManager.getStreamProperties().getProperty("elasticsearch.outputindex");
+        String elasticSearchDocType = streamManager.getStreamProperties().getProperty("elasticsearch.outputdoctype");
+        String elasticSearchScheme = streamManager.getStreamProperties().getProperty("elasticsearch.scheme");
+        String clusterName = streamManager.getStreamProperties().getProperty("elasticsearch.cluster.name");
+        int elasticSearchTimeout = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.timeout"));
+        int adminPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.admin.port"));
 
         dataStream
                 .join(ruleStream.filter(rule -> !rule.getConditionsManager().hasAggregateCondition()))
                 .where(data -> "same")
                 .equalTo(rule -> "same")
                 .window(GlobalWindows.create())
+                .trigger(CountTrigger.of(1))
                 .apply(new JoinFunction<ObjectNode, SigmaRule, Tuple2<ObjectNode, SigmaRule>>() {
                     @Override
                     public Tuple2<ObjectNode, SigmaRule> join(ObjectNode first, SigmaRule second) throws Exception {
@@ -76,39 +79,18 @@ public class SimpleFlinkTopology extends SigmaBaseTopology {
                 .map(BaseJsonNode::toString)
                 .name("convert results to json string")
                 .sinkTo(
-                        FileSink
-                                .forRowFormat(new Path("/var/cache/sigmamatched/matched.json"), new SimpleStringEncoder<String>("UTF-8"))
-                                .withRollingPolicy(
-                                        DefaultRollingPolicy.builder()
-                                                .withRolloverInterval(Duration.ofMinutes(15))
-                                                .withInactivityInterval(Duration.ofMinutes(5))
-                                                .withMaxPartSize(MemorySize.ofMebiBytes(1024))
-                                                .build()
-                                )
-                                .build()
+                        new ElasticSearch5Sink<>(
+                                elasticSearchHost,
+                                elasticSearchPort,
+                                elasticSearchIndex,
+                                elasticSearchDocType,
+                                elasticSearchScheme,
+                                elasticSearchTimeout,
+                                clusterName,
+                                adminPort
+                        )
                 )
-                .name("print")
+                .name("write to file")
         ;
-    }
-
-    private class RuleMatch implements MapFunction<ObjectNode, ObjectNode> {
-
-        private final ArrayList<SigmaRule> sigmaRules;
-        private final boolean firstMatch;
-
-        public RuleMatch(ArrayList<SigmaRule> sigmaRules, boolean firstMatch) {
-            this.sigmaRules = sigmaRules;
-            this.firstMatch = firstMatch;
-        }
-
-        @Override
-        public ObjectNode map(ObjectNode sourceData) throws Exception {
-            SigmaRuleCheck ruleCheck = new SigmaRuleCheck();
-            LogManager.getLogger(SimpleFlinkTopology.class).log(Level.INFO, "source data: " + sourceData.toString());
-            return sigmaRules.stream().filter(rule -> ruleCheck.isValid(rule, sourceData))
-                    .anyMatch(Objects::nonNull) ? sourceData : null
-                    ;
-        }
-
     }
 }

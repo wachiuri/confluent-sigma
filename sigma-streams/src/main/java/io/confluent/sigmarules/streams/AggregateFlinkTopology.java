@@ -19,132 +19,175 @@
 
 package io.confluent.sigmarules.streams;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.Configuration;
+import io.confluent.sigmarules.flink.accumulator.SigmaAggregate;
+import io.confluent.sigmarules.flink.accumulator.SigmaAggregateEntry;
 import io.confluent.sigmarules.flink.accumulator.SigmaWindowedStreamAccumulator;
+import io.confluent.sigmarules.flink.keyselector.SigmaKeySelector;
+import io.confluent.sigmarules.flink.sink.ElasticSearch5Sink;
+import io.confluent.sigmarules.flink.windowassigner.SigmaAggregateWindowAssigner;
 import io.confluent.sigmarules.models.AggregateValues;
 import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.parsers.AggregateParser;
 import io.confluent.sigmarules.rules.SigmaRuleCheck;
-import io.confluent.sigmarules.rules.SigmaRulesFactory;
 import org.apache.flink.api.common.accumulators.Accumulator;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.common.serialization.SimpleStringSchema;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaSink;
+import org.apache.flink.api.common.functions.JoinFunction;
+import org.apache.flink.api.common.typeinfo.TypeHint;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
-import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
-import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
-import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
-import org.apache.flink.util.Collector;
-import org.apache.kafka.common.serialization.Serde;
-import org.apache.kafka.streams.StreamsConfig;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.apache.flink.streaming.api.windowing.assigners.GlobalWindows;
+import org.apache.flink.streaming.api.windowing.triggers.CountTrigger;
+import org.apache.flink.streaming.api.windowing.triggers.ProcessingTimeTrigger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AggregateFlinkTopology extends SigmaBaseTopology {
-    final static Logger logger = LogManager.getLogger(AggregateFlinkTopology.class);
 
-    private final SigmaRuleCheck ruleCheck = new SigmaRuleCheck();
+    final static Logger logger = LoggerFactory.getLogger(AggregateFlinkTopology.class);
 
-    public void createAggregateFlinkTopology(StreamManager streamManager, DataStream<String> sigmaStream,
-                                             SigmaRulesFactory ruleFactory, String outputTopic, Configuration jsonPathConf) {
+    public void createAggregateFlinkTopology(StreamManager streamManager, DataStream<ObjectNode> dataStream,
+                                             DataStream<SigmaRule> ruleStream, String outputTopic, Configuration jsonPathConf) throws IOException {
 
-        final Serde<AggregateResults> aggregateSerde = AggregateResults.getJsonSerde();
+        SigmaRuleCheck ruleCheck = new SigmaRuleCheck();
 
-        for (SigmaRule rule : ruleFactory
-                .getSigmaRules()
-                .values()
-                .stream()
-                .filter(
-                        sigmaRule -> sigmaRule
-                                .getConditionsManager()
-                                .hasAggregateCondition()
-                ).collect(Collectors.toList())
-        ) {
+        String elasticSearchHost = streamManager.getStreamProperties().getProperty("elasticsearch.host");
+        int elasticSearchPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.port"));
+        String elasticSearchIndex = streamManager.getStreamProperties().getProperty("elasticsearch.aggregate.outputindex");
+        String elasticSearchDocType = streamManager.getStreamProperties().getProperty("elasticsearch.aggregate.outputdoctype");
+        String elasticSearchScheme = streamManager.getStreamProperties().getProperty("elasticsearch.scheme");
+        String clusterName = streamManager.getStreamProperties().getProperty("elasticsearch.cluster.name");
+        int elasticSearchTimeout = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.timeout"));
+        int adminPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.admin.port"));
 
-            streamManager.setRecordsProcessed(streamManager.getRecordsProcessed() + 1);
+        dataStream
+                .assignTimestampsAndWatermarks(
+                        WatermarkStrategy
+                                .<ObjectNode>forBoundedOutOfOrderness(Duration.ofMinutes(1))
+                                .withTimestampAssigner(
+                                        (element, timestamp) -> element.has("timestamp") ?
+                                                element.get("timestamp").asLong() :
+                                                element.has("ts") ?
+                                                        element.get("ts").asLong() :
+                                                        timestamp
+                                )
+                                .withIdleness(Duration.ofMinutes(1))
+                )
+                .join(ruleStream.filter(rule -> rule.getConditionsManager().hasAggregateCondition()))
+                .where(data -> "same")
+                .equalTo(rule -> "same")
+                .window(GlobalWindows.create())
+                .trigger(CountTrigger.of(1))
+                .apply(new JoinFunction<ObjectNode, SigmaRule, Tuple2<ObjectNode, SigmaRule>>() {
+                    @Override
+                    public Tuple2<ObjectNode, SigmaRule> join(ObjectNode first, SigmaRule second) throws Exception {
+                        return Tuple2.of(first, second);
+                    }
+                })
+                .filter(tuple -> {
+                    logger.info("comparing rule against data {} {}", tuple.f1, tuple.f0);
+                    return ruleCheck.isValid(tuple.f1, tuple.f0);
+                })
+                .name("filter data that matches the rule ")
+                .keyBy(new SigmaKeySelector())
+                .window(new SigmaAggregateWindowAssigner())
+                .trigger(ProcessingTimeTrigger.create())
+                .aggregate(getAggregateFunction())
+                .name("aggregate")
+                .map(aggregate -> {
+                    logger.info("filtering aggregate {}", aggregate);
+                    AggregateValues aggregateValues = aggregate.f0.getConditionsManager().getAggregateCondition()
+                            .getAggregateValues();
+                    long operationValue = Long.parseLong(aggregateValues.getOperationValue());
 
-            AggregateValues aggregateValues = rule.getConditionsManager().getAggregateCondition().getAggregateValues();
+                    List<SigmaAggregateEntry> matched = new ArrayList<>();
 
-            sigmaStream
-                    .map(sourceData -> (ObjectNode) new ObjectMapper().readTree(sourceData))
-                    .filter(data -> ruleCheck.isValid(rule, data, jsonPathConf))
-                    .name("filter data that matches the rule " + rule.getTitle())
-                    .keyBy(sourceData -> updateKey(rule, sourceData))
-                    .process(
-                            new KeyedProcessFunction<String, ObjectNode, ObjectNode>() {
-                                @Override
-                                public void processElement(ObjectNode value, KeyedProcessFunction<String, ObjectNode, ObjectNode>.Context ctx, Collector<ObjectNode> out) throws Exception {
-                                    ObjectNode newValue = (ObjectNode) value;
-                                    newValue.put("sigmaGroupByKey", ctx.getCurrentKey());
-                                    out.collect(newValue);
+                    for (SigmaAggregateEntry sigmaAggregateEntry : aggregate.f1.getAggregates()) {
+
+                        switch (aggregateValues.getOperation()) {
+                            case AggregateParser.EQUALS:
+                                if (sigmaAggregateEntry.getValue() == operationValue) {
+                                    matched.add(sigmaAggregateEntry);
                                 }
-                            })
-                    .name("put the key (rule-aggregationFunction-distinctValue-operation-operationValue) in the object")
-                    .keyBy(node -> node.get("sigmaGroupByKey").asText())
-                    .window(TumblingEventTimeWindows.of(Duration.ofMillis(rule.getDetectionsManager().getWindowTimeMS())))
-                    .process(new ProcessWindowFunction<ObjectNode, ObjectNode, String, TimeWindow>() {
-                        @Override
-                        public void process(String key, ProcessWindowFunction<ObjectNode, ObjectNode, String, TimeWindow>.Context context, Iterable<ObjectNode> elements, Collector<ObjectNode> out) throws Exception {
-                            elements.forEach(objectNode -> {
-
-                                objectNode.put("sigmaTimeFrame", context.window().getStart() + "-" + context.window().getEnd());
-                                out.collect(objectNode);
-                            });
+                                break;
+                            case AggregateParser.GREATER_THAN:
+                                if (sigmaAggregateEntry.getValue() > operationValue) {
+                                    matched.add(sigmaAggregateEntry);
+                                }
+                                break;
+                            case AggregateParser.GREATER_THAN_EQUAL:
+                                if (sigmaAggregateEntry.getValue() >= operationValue) {
+                                    matched.add(sigmaAggregateEntry);
+                                }
+                                break;
+                            case AggregateParser.LESS_THAN:
+                                if (sigmaAggregateEntry.getValue() < operationValue) {
+                                    matched.add(sigmaAggregateEntry);
+                                }
+                                break;
+                            case AggregateParser.LESS_THAN_EQUAL:
+                                if (sigmaAggregateEntry.getValue() <= operationValue) {
+                                    matched.add(sigmaAggregateEntry);
+                                }
+                                break;
+                            default:
+                                throw new UnsupportedOperationException("Unhandled operation: " + aggregateValues.getOperation() +
+                                        ". For rule " + aggregate.f0.getTitle());
                         }
-                    })
-                    .name("put the time frame in the object")
-                    .keyBy(node -> node.get("sigmaGroupByKey").asText() + "-" + node.get("sigmaTimeFrame").asText())
-                    .window(TumblingEventTimeWindows.of(Duration.ofMillis(rule.getDetectionsManager().getWindowTimeMS())))
-                    .aggregate(getAggregateFunction(aggregateValues))
-                    .name("aggregate")
-                    .map(aggregate -> filterMatchingAggregations(rule, aggregate))
-                    .name("filter matching aggregations")
-                    .filter(aggregate -> !aggregate.isEmpty())
-                    .name("filter empty aggregations")
-                    .map(aggregate -> new ObjectMapper().writeValueAsString(aggregate))
-                    .name("convert results to json")
-                    .sinkTo(
-                            KafkaSink.<String>builder()
-                                    .setBootstrapServers(streamManager.getStreamProperties().getProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG))
-                                    .setRecordSerializer(
-                                            KafkaRecordSerializationSchema.builder()
-                                                    .setTopic(outputTopic)
-                                                    .setValueSerializationSchema(new SimpleStringSchema())
-                                                    .build()
-                                    )
-                                    .build()
-                    )
-                    .name("send results to kafka output topic")
-            ;
-        }
+                    }
+
+                    aggregate.f1.setAggregates(matched);
+
+                    return aggregate.f1;
+                })
+                .returns(new TypeHint<SigmaAggregate>() {
+                })
+                .name("filter matching aggregations")
+                .filter(aggregate -> {
+                    logger.info("filtering empty aggregates {}", aggregate);
+                    return !aggregate.getAggregates().isEmpty();
+                })
+                .name("filter empty aggregations")
+                .map(aggregate->new ObjectMapper().writeValueAsString(aggregate))
+                .name("map to json")
+                .sinkTo(
+                        new ElasticSearch5Sink<>(
+                                elasticSearchHost,
+                                elasticSearchPort,
+                                elasticSearchIndex,
+                                elasticSearchDocType,
+                                elasticSearchScheme,
+                                elasticSearchTimeout,
+                                clusterName,
+                                adminPort
+                        )
+                )
+                .name("write results to elasticsearch")
+        ;
+
     }
 
-    private AggregateFunction<ObjectNode, ? extends Accumulator<JsonNode, HashMap<String, HashMap<String, Double>>>, HashMap<String, HashMap<String, Double>>> getAggregateFunction(AggregateValues aggregateValues) {
+    private AggregateFunction<Tuple2<ObjectNode, SigmaRule>, ? extends Accumulator<Tuple2<ObjectNode, SigmaRule>, Tuple2<SigmaRule, SigmaAggregate>>, Tuple2<SigmaRule, SigmaAggregate>> getAggregateFunction() {
 
-        return new AggregateFunction<ObjectNode, SigmaWindowedStreamAccumulator, HashMap<String, HashMap<String, Double>>>() {
+        return new AggregateFunction<Tuple2<ObjectNode, SigmaRule>, SigmaWindowedStreamAccumulator, Tuple2<SigmaRule, SigmaAggregate>>() {
 
             @Override
             public SigmaWindowedStreamAccumulator createAccumulator() {
-                return new SigmaWindowedStreamAccumulator(aggregateValues);
+                return new SigmaWindowedStreamAccumulator();
             }
 
             @Override
-            public SigmaWindowedStreamAccumulator add(ObjectNode value, SigmaWindowedStreamAccumulator accumulator) {
-                String distinctValue = aggregateValues.getDistinctValue();
+            public SigmaWindowedStreamAccumulator add(Tuple2<ObjectNode, SigmaRule> value, SigmaWindowedStreamAccumulator accumulator) {
 
-                if (!value.has(distinctValue)) {
-                    return accumulator;
-                }
+                logger.info("adding to aggregate {}", value);
 
                 accumulator.add(value);
 
@@ -152,7 +195,8 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
             }
 
             @Override
-            public HashMap<String, HashMap<String, Double>> getResult(SigmaWindowedStreamAccumulator accumulator) {
+            public Tuple2<SigmaRule, SigmaAggregate> getResult(SigmaWindowedStreamAccumulator accumulator) {
+                logger.info("getResult {} {}", accumulator.getLocalValue(), accumulator);
                 return accumulator.getLocalValue();
             }
 
@@ -162,89 +206,5 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
                 return a;
             }
         };
-    }
-
-    private String updateKey(SigmaRule rule, JsonNode source) {
-        // make the key the title + groupBy + distinctValue, so we have 1 unique stream
-        //count(username) by sourceIp>2
-        AggregateValues aggregateValues = rule.getConditionsManager().getAggregateCondition()
-                .getAggregateValues();
-
-        String newKey = rule.getTitle();
-        String groupBy = aggregateValues.getGroupBy();
-        if (groupBy != null && !groupBy.isEmpty() && source.get(groupBy) != null) {
-            newKey = newKey + "-" + source.get(aggregateValues.getGroupBy()).asText();
-        }
-
-        String distinctValue = aggregateValues.getDistinctValue();
-        if (distinctValue != null && !distinctValue.isEmpty() &&
-                source.get(distinctValue) != null) {
-            newKey = newKey + "-" + source.get(distinctValue).asText();
-        }
-
-        String operation = aggregateValues.getOperation();
-        if (operation != null && !operation.isEmpty()) {
-            newKey = newKey + "-" + operation;
-        }
-
-        String operationValue = aggregateValues.getOperationValue();
-        if (operationValue != null && !operationValue.isEmpty()) {
-            newKey = newKey + "-" + operationValue;
-        }
-
-        return newKey;
-    }
-
-    private HashMap<String, HashMap<String, Double>> filterMatchingAggregations(SigmaRule rule, HashMap<String, HashMap<String, Double>> aggregations) {
-        AggregateValues aggregateValues = rule.getConditionsManager().getAggregateCondition()
-                .getAggregateValues();
-        long operationValue = Long.parseLong(aggregateValues.getOperationValue());
-
-        HashMap<String, HashMap<String, Double>> matchedGroupByData = new HashMap<>();
-
-        for (Map.Entry<String, HashMap<String, Double>> groupBys : aggregations.entrySet()) {
-
-            HashMap<String, Double> matchedWindowData = new HashMap<>();
-
-            for (Map.Entry<String, Double> sigmaTimeFrameMap : groupBys.getValue().entrySet()) {
-
-                switch (aggregateValues.getOperation()) {
-                    case AggregateParser.EQUALS:
-                        if (sigmaTimeFrameMap.getValue() == operationValue) {
-                            matchedWindowData.put(sigmaTimeFrameMap.getKey(), sigmaTimeFrameMap.getValue());
-                        }
-                        break;
-                    case AggregateParser.GREATER_THAN:
-                        if (sigmaTimeFrameMap.getValue() > operationValue) {
-                            matchedWindowData.put(sigmaTimeFrameMap.getKey(), sigmaTimeFrameMap.getValue());
-                        }
-                        break;
-                    case AggregateParser.GREATER_THAN_EQUAL:
-                        if (sigmaTimeFrameMap.getValue() >= operationValue) {
-                            matchedWindowData.put(sigmaTimeFrameMap.getKey(), sigmaTimeFrameMap.getValue());
-                        }
-                        break;
-                    case AggregateParser.LESS_THAN:
-                        if (sigmaTimeFrameMap.getValue() < operationValue) {
-                            matchedWindowData.put(sigmaTimeFrameMap.getKey(), sigmaTimeFrameMap.getValue());
-                        }
-                        break;
-                    case AggregateParser.LESS_THAN_EQUAL:
-                        if (sigmaTimeFrameMap.getValue() <= operationValue) {
-                            matchedWindowData.put(sigmaTimeFrameMap.getKey(), sigmaTimeFrameMap.getValue());
-                        }
-                        break;
-                    default:
-                        throw new UnsupportedOperationException("Unhandled operation: " + aggregateValues.getOperation() +
-                                ". For rule " + rule.getTitle());
-                }
-            }
-
-            if (!matchedWindowData.isEmpty()) {
-                matchedGroupByData.put(groupBys.getKey(), matchedWindowData);
-            }
-        }
-
-        return matchedGroupByData;
     }
 }
