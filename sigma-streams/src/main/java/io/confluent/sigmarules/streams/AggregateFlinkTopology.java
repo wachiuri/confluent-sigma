@@ -19,7 +19,6 @@
 
 package io.confluent.sigmarules.streams;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.Configuration;
 import io.confluent.sigmarules.flink.accumulator.SigmaAggregate;
@@ -156,8 +155,6 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
                     return !aggregate.getAggregates().isEmpty();
                 })
                 .name("filter empty aggregations")
-                .map(aggregate->new ObjectMapper().writeValueAsString(aggregate))
-                .name("map to json")
                 .sinkTo(
                         new ElasticSearch5Sink<>(
                                 elasticSearchHost,

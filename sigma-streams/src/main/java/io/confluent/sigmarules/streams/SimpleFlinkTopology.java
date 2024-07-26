@@ -20,7 +20,6 @@
 
 package io.confluent.sigmarules.streams;
 
-import com.fasterxml.jackson.databind.node.BaseJsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.Configuration;
 import io.confluent.sigmarules.flink.sink.ElasticSearch5Sink;
@@ -76,8 +75,6 @@ public class SimpleFlinkTopology extends SigmaBaseTopology {
                 .name("matching data against sigma rules")
                 .map(tuple2 -> tuple2.f0)
                 .name("extract data")
-                .map(BaseJsonNode::toString)
-                .name("convert results to json string")
                 .sinkTo(
                         new ElasticSearch5Sink<>(
                                 elasticSearchHost,

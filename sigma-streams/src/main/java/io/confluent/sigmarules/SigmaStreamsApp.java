@@ -81,7 +81,17 @@ public class SigmaStreamsApp {
         }
 
         SigmaStreamsApp sigma = new SigmaStreamsApp();
-        InputStream input = SigmaStreamsApp.class.getClassLoader().getResourceAsStream("application.properties");
+
+        String springEnvironment = System.getenv("SPRING_PROFILES_ACTIVE");
+        if (springEnvironment == null) {
+            springEnvironment = "default";
+        }
+
+        logger.info("loading application-" + springEnvironment + ".properties");
+
+        InputStream input = SigmaStreamsApp.class.getClassLoader()
+                .getResourceAsStream("application-" + springEnvironment + ".properties");
+
         if (sigma.isDockerized()) {
             logger.info("Initialize SigmaStreamsApp from environment variables");
             sigma.initializeWithEnv();

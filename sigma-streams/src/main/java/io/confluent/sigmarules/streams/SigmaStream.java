@@ -119,7 +119,11 @@ public class SigmaStream extends StreamManager {
 
             //Topology topology = createTopology();
 
-            env = StreamExecutionEnvironment.createLocalEnvironment();
+            if (System.getenv("SPRING_PROFILES_ACTIVE").equals("local")) {
+                env = StreamExecutionEnvironment.createLocalEnvironment();
+            } else {
+                env = StreamExecutionEnvironment.getExecutionEnvironment();
+            }
             createFlinkTopology(env);
 
             //streams = new KafkaStreams(topology, getStreamProperties());
@@ -209,7 +213,6 @@ public class SigmaStream extends StreamManager {
         AggregateFlinkTopology aggregateFlinkTopology = new AggregateFlinkTopology();
         aggregateFlinkTopology.createAggregateFlinkTopology(this, dataStream, ruleStream, outputTopic,
                 jsonPathConf);
-
 
     }
 

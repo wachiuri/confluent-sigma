@@ -75,7 +75,7 @@ public class ElasticSearch5Sink<T> implements Serializable, Sink<T> {
         TransportClient transportClient = new PreBuiltTransportClient(settings)
                 .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName(host), adminPort));
 
-        manageIndex("aggregate", "aggregate",
+        manageIndex("sigma-aggregate", "sigma-aggregate",
                 Map.of(
                         "properties", Map.of(
                                 "sigmaRuleName", Map.of("type", "text"),
@@ -93,7 +93,7 @@ public class ElasticSearch5Sink<T> implements Serializable, Sink<T> {
                 transportClient
         );
 
-        manageIndex("sigmadetection", "sigmadetection", Map.of(
+        manageIndex("sigma-detection", "sigma-detection", Map.of(
                         "properties", Map.ofEntries(
                                 entry("ts", Map.of("type", "double")),
                                 entry("uid", Map.of("type", "keyword")),
