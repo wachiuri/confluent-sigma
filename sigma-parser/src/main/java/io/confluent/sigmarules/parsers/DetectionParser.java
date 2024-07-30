@@ -6,15 +6,15 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- *
+ * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
  * KIND, either express or implied.  See the License for the
  * specific language governing permissions and limitations
- * under the License.    
+ * under the License.
  */
 
 package io.confluent.sigmarules.parsers;
@@ -26,17 +26,13 @@ import io.confluent.sigmarules.models.DetectionsManager;
 import io.confluent.sigmarules.models.ModifierType;
 import io.confluent.sigmarules.models.SigmaDetection;
 import io.confluent.sigmarules.models.SigmaDetections;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 public class DetectionParser {
     final static Logger logger = LogManager.getLogger(DetectionParser.class);
@@ -51,15 +47,20 @@ public class DetectionParser {
 
     private FieldMapper fieldMapper = null;
 
-    public DetectionParser() {}
+    public DetectionParser() {
+    }
 
     public DetectionParser(FieldMapper fieldMapper) {
         this.fieldMapper = fieldMapper;
     }
 
     public DetectionsManager parseDetections(ParsedSigmaRule sigmaRule)
-        throws InvalidSigmaRuleException, SigmaRuleParserException {
+            throws InvalidSigmaRuleException, SigmaRuleParserException {
         DetectionsManager detectionsManager = new DetectionsManager();
+
+        if (sigmaRule.getDetection() == null) {
+            return detectionsManager;
+        }
 
         // loop through list of detections - search identifier are the keys
         // the values can be either lists or maps (key / value pairs)
@@ -69,7 +70,7 @@ public class DetectionParser {
             Object searchIdentifiers = entry.getValue();
 
             if (detectionName.equals("condition") || detectionName.equals("timeframe") ||
-                detectionName.equals("fields")) {
+                    detectionName.equals("fields")) {
                 // handle separately
             } else {
                 detectionsManager.addDetections(detectionName, parseDetection(searchIdentifiers));
@@ -84,11 +85,11 @@ public class DetectionParser {
     }
 
     private void parseMap(SigmaDetections parsedDetections, LinkedHashMap<String, Object> searchIdMap)
-        throws InvalidSigmaRuleException {
+            throws InvalidSigmaRuleException {
 
         for (Map.Entry<String, Object> searchId : searchIdMap.entrySet()) {
             if (searchId.getValue() instanceof ArrayList) {
-                List<Object> searchArray = (ArrayList<Object>)searchId.getValue();
+                List<Object> searchArray = (ArrayList<Object>) searchId.getValue();
                 parseList(parsedDetections, searchId.getKey(), searchArray);
             } else if (searchId.getValue() instanceof LinkedHashMap) {
                 LinkedHashMap<String, Object> searchIdInnerMap = (LinkedHashMap<String, Object>) searchId.getValue();
@@ -104,7 +105,7 @@ public class DetectionParser {
     }
 
     private void parseList(SigmaDetections parsedDetections, String name, List<Object> searchIdValues)
-        throws InvalidSigmaRuleException {
+            throws InvalidSigmaRuleException {
 
         SigmaDetection detectionModel = null;
         if (name != null) {
@@ -114,7 +115,7 @@ public class DetectionParser {
 
         for (Object v : searchIdValues) {
             if ((v instanceof LinkedHashMap) || (name == null)) {
-                LinkedHashMap<String, Object> searchIdMap = (LinkedHashMap<String, Object>)v;
+                LinkedHashMap<String, Object> searchIdMap = (LinkedHashMap<String, Object>) v;
                 parseMap(parsedDetections, searchIdMap);
             } else {
                 parseValue(detectionModel, v.toString());
@@ -127,7 +128,7 @@ public class DetectionParser {
     }
 
     private SigmaDetections parseDetection(Object searchIdentifiers)
-        throws InvalidSigmaRuleException, SigmaRuleParserException {
+            throws InvalidSigmaRuleException, SigmaRuleParserException {
         SigmaDetections parsedDetections = new SigmaDetections();
 
         // check if the search identifier is a list or a map
@@ -136,12 +137,12 @@ public class DetectionParser {
             parseMap(parsedDetections, searchIdMap);
         } else if (searchIdentifiers instanceof ArrayList) {
             // Array list contains a map of key/values and parsed by the parseMap function eventually
-            List<Object> searchArray = (ArrayList<Object>)searchIdentifiers;
+            List<Object> searchArray = (ArrayList<Object>) searchIdentifiers;
             parseList(parsedDetections, null, searchArray);
         } else {
             logger.error("unknown type: " + searchIdentifiers.getClass() + " value: " + searchIdentifiers);
             throw new SigmaRuleParserException("Unknown type: " + searchIdentifiers.getClass() +
-                " value: " + searchIdentifiers);
+                    " value: " + searchIdentifiers);
         }
         return parsedDetections;
     }
@@ -168,7 +169,7 @@ public class DetectionParser {
             String[] modifiers = StringUtils.split(name, SEPERATOR);
 
             Iterator<String> iterator = Arrays.stream(modifiers).iterator();
-            while(iterator.hasNext()) {
+            while (iterator.hasNext()) {
                 ModifierType modifier = ModifierType.getEnum(iterator.next());
                 if (modifier == ModifierType.ALL) {
                     detectionModel.setMatchAll(true);
@@ -185,8 +186,7 @@ public class DetectionParser {
             for (ModifierType modifier : detectionModel.getModifiers()) {
                 detectionModel.addValue(buildStringWithModifier(value, modifier));
             }
-        }
-        else {
+        } else {
             detectionModel.addValue(sigmaWildcardToRegex(value));
         }
     }
@@ -221,9 +221,9 @@ public class DetectionParser {
             // check if pattern is already a regex and do nothing
             Pattern.compile(regex);
             return true;
-          } catch (PatternSyntaxException e) {
-           return false;
-          }
+        } catch (PatternSyntaxException e) {
+            return false;
+        }
     }
 
     /**
@@ -234,14 +234,23 @@ public class DetectionParser {
      */
     private String sigmaWildcardToRegex(String value) {
         StringBuilder out = new StringBuilder();
-        for(int i = 0; i < value.length(); ++i) {
+        for (int i = 0; i < value.length(); ++i) {
             final char c = value.charAt(i);
-            switch(c) {
-                case '*': out.append(".*"); break;
-                case '?': out.append('.'); break;
-                case '.': out.append("\\."); break;
-                case '\\': out.append("\\\\"); break;
-                default: out.append(c);
+            switch (c) {
+                case '*':
+                    out.append(".*");
+                    break;
+                case '?':
+                    out.append('.');
+                    break;
+                case '.':
+                    out.append("\\.");
+                    break;
+                case '\\':
+                    out.append("\\\\");
+                    break;
+                default:
+                    out.append(c);
             }
         }
         return out.toString();

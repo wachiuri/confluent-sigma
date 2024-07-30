@@ -31,6 +31,7 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -67,7 +68,7 @@ public class SigmaRulesFactory implements SigmaRuleObserver {
         FieldMapper fieldMapFile = null;
         try {
             if (properties.containsKey("field.mapping.file"))
-                fieldMapFile = new FieldMapper(properties.getProperty("field.mapping.file"));
+                fieldMapFile = new FieldMapper(Path.of(properties.getProperty("field.mapping.file")));
         } catch (IllegalArgumentException | IOException e) {
             logger.info("no field mapping file provided");
         }

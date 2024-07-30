@@ -25,7 +25,7 @@ import io.confluent.sigmarules.flink.accumulator.SigmaAggregate;
 import io.confluent.sigmarules.flink.accumulator.SigmaAggregateEntry;
 import io.confluent.sigmarules.flink.accumulator.SigmaWindowedStreamAccumulator;
 import io.confluent.sigmarules.flink.keyselector.SigmaKeySelector;
-import io.confluent.sigmarules.flink.sink.ElasticSearch5Sink;
+import io.confluent.sigmarules.flink.sink.elasticsearch5.Elasticsearch5Sink;
 import io.confluent.sigmarules.flink.windowassigner.SigmaAggregateWindowAssigner;
 import io.confluent.sigmarules.models.AggregateValues;
 import io.confluent.sigmarules.models.SigmaRule;
@@ -41,6 +41,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.windowing.assigners.GlobalWindows;
 import org.apache.flink.streaming.api.windowing.triggers.CountTrigger;
 import org.apache.flink.streaming.api.windowing.triggers.ProcessingTimeTrigger;
+import org.apache.http.HttpHost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,8 +66,9 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
         String elasticSearchScheme = streamManager.getStreamProperties().getProperty("elasticsearch.scheme");
         String clusterName = streamManager.getStreamProperties().getProperty("elasticsearch.cluster.name");
         int elasticSearchTimeout = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.timeout"));
-        int adminPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.admin.port"));
+        int elasticSearchAdminPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.admin.port"));
 
+        logger.info("adminPort {}", elasticSearchAdminPort);
         dataStream
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy
@@ -80,7 +82,11 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
                                 )
                                 .withIdleness(Duration.ofMinutes(1))
                 )
-                .join(ruleStream.filter(rule -> rule.getConditionsManager().hasAggregateCondition()))
+                .join(ruleStream.filter(rule -> {
+                            logger.info("has aggregate condition {}", rule.getConditionsManager().hasAggregateCondition());
+                            return rule.getConditionsManager().hasAggregateCondition();
+                        })
+                )
                 .where(data -> "same")
                 .equalTo(rule -> "same")
                 .window(GlobalWindows.create())
@@ -88,11 +94,12 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
                 .apply(new JoinFunction<ObjectNode, SigmaRule, Tuple2<ObjectNode, SigmaRule>>() {
                     @Override
                     public Tuple2<ObjectNode, SigmaRule> join(ObjectNode first, SigmaRule second) throws Exception {
+                        logger.info("joining {} and {}", first, second);
                         return Tuple2.of(first, second);
                     }
                 })
                 .filter(tuple -> {
-                    logger.info("comparing rule against data {} {}", tuple.f1, tuple.f0);
+                    logger.info("matches with rule {} ", ruleCheck.isValid(tuple.f1, tuple.f0));
                     return ruleCheck.isValid(tuple.f1, tuple.f0);
                 })
                 .name("filter data that matches the rule ")
@@ -102,7 +109,7 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
                 .aggregate(getAggregateFunction())
                 .name("aggregate")
                 .map(aggregate -> {
-                    logger.info("filtering aggregate {}", aggregate);
+                    logger.info("aggregate {}", aggregate);
                     AggregateValues aggregateValues = aggregate.f0.getConditionsManager().getAggregateCondition()
                             .getAggregateValues();
                     long operationValue = Long.parseLong(aggregateValues.getOperationValue());
@@ -151,20 +158,18 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
                 })
                 .name("filter matching aggregations")
                 .filter(aggregate -> {
-                    logger.info("filtering empty aggregates {}", aggregate);
+                    logger.info("aggregates is not empty {}", !aggregate.getAggregates().isEmpty());
                     return !aggregate.getAggregates().isEmpty();
                 })
                 .name("filter empty aggregations")
                 .sinkTo(
-                        new ElasticSearch5Sink<>(
-                                elasticSearchHost,
-                                elasticSearchPort,
-                                elasticSearchIndex,
-                                elasticSearchDocType,
-                                elasticSearchScheme,
-                                elasticSearchTimeout,
+                        new Elasticsearch5Sink<>(
+                                new HttpHost(elasticSearchHost, elasticSearchPort, elasticSearchScheme),
                                 clusterName,
-                                adminPort
+                                elasticSearchTimeout,
+                                elasticSearchAdminPort,
+                                elasticSearchIndex,
+                                elasticSearchDocType
                         )
                 )
                 .name("write results to elasticsearch")
@@ -184,8 +189,6 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
             @Override
             public SigmaWindowedStreamAccumulator add(Tuple2<ObjectNode, SigmaRule> value, SigmaWindowedStreamAccumulator accumulator) {
 
-                logger.info("adding to aggregate {}", value);
-
                 accumulator.add(value);
 
                 return accumulator;
@@ -193,7 +196,6 @@ public class AggregateFlinkTopology extends SigmaBaseTopology {
 
             @Override
             public Tuple2<SigmaRule, SigmaAggregate> getResult(SigmaWindowedStreamAccumulator accumulator) {
-                logger.info("getResult {} {}", accumulator.getLocalValue(), accumulator);
                 return accumulator.getLocalValue();
             }
 

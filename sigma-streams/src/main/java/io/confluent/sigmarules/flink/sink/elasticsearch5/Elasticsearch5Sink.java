@@ -1,10 +1,10 @@
-package io.confluent.sigmarules.flink.sink;
+package io.confluent.sigmarules.flink.sink.elasticsearch5;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
+import org.apache.flink.api.connector.sink2.WriterInitContext;
 import org.apache.http.HttpHost;
-import org.apache.http.message.BasicHeader;
-import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexResponse;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
@@ -32,48 +32,87 @@ import java.util.UUID;
 
 import static java.util.Map.entry;
 
-public class ElasticSearch5Sink<T> implements Serializable, Sink<T> {
+public class Elasticsearch5Sink<T> implements Sink<T>, Serializable {
 
-    private static final Logger logger = LoggerFactory.getLogger(ElasticSearch5Sink.class);
+    private static final Logger logger = LoggerFactory.getLogger(Elasticsearch5Sink.class);
 
-    private final String host;
-    private final int port;
-    private final String index;
-    private final String docType;
-    private final String scheme;
-    private final int timeout;
-    private final String clusterName;
-    private final int adminPort;
+    private HttpHost host;
+    private String clusterName;
+    private int adminPort;
+    private int timeout;
+    private String index;
+    private String docType;
 
-    public ElasticSearch5Sink(
-            String host,
-            int port,
-            String index,
-            String docType,
-            String scheme,
-            int timeout,
+    public Elasticsearch5Sink(
+            HttpHost host,
             String clusterName,
-            int adminPort
+            int timeout,
+            int adminPort,
+            String index,
+            String docType
     ) throws IOException {
 
         this.host = host;
-        this.port = port;
-        this.index = index;
-        this.docType = docType;
-        this.scheme = scheme;
-        this.timeout = timeout;
         this.clusterName = clusterName;
         this.adminPort = adminPort;
+        this.timeout = timeout;
+        this.index = index;
+        this.docType = docType;
 
         manageIndices();
     }
+
+    @Override
+    public SinkWriter<T> createWriter(InitContext context) throws IOException {
+
+        return new SinkWriter<T>() {
+
+            private final RestClient restClient = RestClient.builder(host)
+                    .setRequestConfigCallback(
+                            requestConfigBuilder -> requestConfigBuilder
+                                    .setConnectTimeout(timeout)
+                                    .setSocketTimeout(timeout))
+                    .setMaxRetryTimeoutMillis(timeout)
+                    .build();
+            private final RestHighLevelClient restHighLevelClient = new RestHighLevelClient(restClient);
+
+
+            @Override
+            public void write(T element, Context context) throws IOException, InterruptedException {
+                logger.info("writing element {}", element);
+                IndexRequest indexRequest = new IndexRequest(index, docType, UUID.randomUUID().toString());
+                String jsonString = new ObjectMapper().writeValueAsString(element);
+                indexRequest.source(jsonString, XContentType.JSON);
+
+                IndexResponse response = restHighLevelClient.index(indexRequest);
+
+                logger.info("response {}", response);
+            }
+
+            @Override
+            public void flush(boolean endOfInput) throws IOException, InterruptedException {
+
+            }
+
+            @Override
+            public void close() throws Exception {
+                restClient.close();
+            }
+        };
+    }
+
+    @Override
+    public SinkWriter<T> createWriter(WriterInitContext context) throws IOException {
+        return Sink.super.createWriter(context);
+    }
+
 
     private void manageIndices() throws IOException {
 
         Settings settings = Settings.builder()
                 .put("cluster.name", clusterName).build();
         TransportClient transportClient = new PreBuiltTransportClient(settings)
-                .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName(host), adminPort));
+                .addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName(host.getHostName()), adminPort));
 
         manageIndex("sigma-aggregate", "sigma-aggregate",
                 Map.of(
@@ -136,7 +175,6 @@ public class ElasticSearch5Sink<T> implements Serializable, Sink<T> {
                 transportClient.admin().indices().putMapping(putMappingRequest).actionGet();
             }
 
-
         } else {
             CreateIndexRequest createIndexRequest = new CreateIndexRequest(indexName).mapping(docType, mappings);
             CreateIndexResponse createIndexResponse = transportClient.admin().indices().create(createIndexRequest).actionGet();
@@ -147,67 +185,4 @@ public class ElasticSearch5Sink<T> implements Serializable, Sink<T> {
         }
     }
 
-
-    @Override
-    public SinkWriter<T> createWriter(InitContext context) throws IOException {
-
-        return new SinkWriter<T>() {
-
-            private final RestClient restClient = RestClient.builder(
-                            new HttpHost(
-                                    host,
-                                    port,
-                                    scheme
-                            )
-                    )
-                    .setRequestConfigCallback(
-                            requestConfigBuilder -> requestConfigBuilder
-                                    .setConnectTimeout(timeout)
-                                    .setSocketTimeout(timeout)
-                    )
-                    .setMaxRetryTimeoutMillis(timeout)
-                    .build();
-
-            private final RestHighLevelClient restHighLevelClient = new RestHighLevelClient(restClient);
-
-            @Override
-            public void write(T element, Context context) throws IOException, InterruptedException {
-
-                logger.info("Writing element: {}", element);
-
-                restHighLevelClient
-                        .indexAsync(
-                                new IndexRequest(
-                                        index,
-                                        docType,
-                                        UUID.randomUUID().toString()
-                                )
-                                        .source(element, XContentType.JSON)
-                                ,
-                                new ActionListener<IndexResponse>() {
-                                    @Override
-                                    public void onResponse(IndexResponse indexResponse) {
-                                        logger.info("elasticsearch response {} ", indexResponse);
-                                    }
-
-                                    @Override
-                                    public void onFailure(Exception e) {
-                                        logger.error("Error writing element: {}", element, e);
-                                    }
-                                },
-                                new BasicHeader("Content-Type", "application/json")
-                        );
-            }
-
-            @Override
-            public void flush(boolean endOfInput) throws IOException, InterruptedException {
-
-            }
-
-            @Override
-            public void close() throws Exception {
-                restClient.close();
-            }
-        };
-    }
 }

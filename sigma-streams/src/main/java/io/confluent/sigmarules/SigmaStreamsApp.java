@@ -87,8 +87,6 @@ public class SigmaStreamsApp {
             springEnvironment = "default";
         }
 
-        logger.info("loading application-" + springEnvironment + ".properties");
-
         InputStream input = SigmaStreamsApp.class.getClassLoader()
                 .getResourceAsStream("application-" + springEnvironment + ".properties");
 
@@ -96,7 +94,7 @@ public class SigmaStreamsApp {
             logger.info("Initialize SigmaStreamsApp from environment variables");
             sigma.initializeWithEnv();
         } else if (input != null) {
-            logger.info("Initialize SigmaStreamsApp from classpath:application.properties");
+            logger.info("Initialize SigmaStreamsApp from classpath:application-" + springEnvironment + ".properties");
             Properties properties = new Properties();
             properties.load(input);
             sigma.initializeWithProps(properties);

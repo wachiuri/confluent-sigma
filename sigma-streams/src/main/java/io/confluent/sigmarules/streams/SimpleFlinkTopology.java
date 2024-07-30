@@ -22,7 +22,7 @@ package io.confluent.sigmarules.streams;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.Configuration;
-import io.confluent.sigmarules.flink.sink.ElasticSearch5Sink;
+import io.confluent.sigmarules.flink.sink.elasticsearch5.Elasticsearch5Sink;
 import io.confluent.sigmarules.models.SigmaRule;
 import io.confluent.sigmarules.rules.SigmaRuleCheck;
 import org.apache.flink.api.common.functions.JoinFunction;
@@ -30,6 +30,7 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.windowing.assigners.GlobalWindows;
 import org.apache.flink.streaming.api.windowing.triggers.CountTrigger;
+import org.apache.http.HttpHost;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -57,10 +58,14 @@ public class SimpleFlinkTopology extends SigmaBaseTopology {
         String elasticSearchScheme = streamManager.getStreamProperties().getProperty("elasticsearch.scheme");
         String clusterName = streamManager.getStreamProperties().getProperty("elasticsearch.cluster.name");
         int elasticSearchTimeout = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.timeout"));
-        int adminPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.admin.port"));
+        int elasticSearchAdminPort = Integer.parseInt(streamManager.getStreamProperties().getProperty("elasticsearch.admin.port"));
 
         dataStream
-                .join(ruleStream.filter(rule -> !rule.getConditionsManager().hasAggregateCondition()))
+                .join(ruleStream.filter(rule -> {
+                    boolean hasNoAggregateCondition = !rule.getConditionsManager().hasAggregateCondition();
+                    //logger.info("has no aggregate condition {}", hasNoAggregateCondition);
+                    return hasNoAggregateCondition;
+                }))
                 .where(data -> "same")
                 .equalTo(rule -> "same")
                 .window(GlobalWindows.create())
@@ -68,26 +73,32 @@ public class SimpleFlinkTopology extends SigmaBaseTopology {
                 .apply(new JoinFunction<ObjectNode, SigmaRule, Tuple2<ObjectNode, SigmaRule>>() {
                     @Override
                     public Tuple2<ObjectNode, SigmaRule> join(ObjectNode first, SigmaRule second) throws Exception {
+                        //logger.info("joining {} and {}", first, second);
                         return Tuple2.of(first, second);
                     }
                 })
-                .filter(tuple2 -> sigmaRuleCheck.isValid(tuple2.f1, tuple2.f0))
+                .filter(tuple2 -> {
+                    boolean isValid = sigmaRuleCheck.isValid(tuple2.f1, tuple2.f0);
+                    //logger.info("matching data against sigma rules {}", isValid);
+                    return isValid;
+                })
                 .name("matching data against sigma rules")
-                .map(tuple2 -> tuple2.f0)
+                .map(tuple2 -> {
+                    //logger.info("extracting data from {}", tuple2);
+                    return tuple2.f0;
+                })
                 .name("extract data")
                 .sinkTo(
-                        new ElasticSearch5Sink<>(
-                                elasticSearchHost,
-                                elasticSearchPort,
-                                elasticSearchIndex,
-                                elasticSearchDocType,
-                                elasticSearchScheme,
-                                elasticSearchTimeout,
+                        new Elasticsearch5Sink<>(
+                                new HttpHost(elasticSearchHost, elasticSearchPort, elasticSearchScheme),
                                 clusterName,
-                                adminPort
+                                elasticSearchTimeout,
+                                elasticSearchAdminPort,
+                                elasticSearchIndex,
+                                elasticSearchDocType
                         )
                 )
-                .name("write to file")
+                .name("write to elasticsearch")
         ;
     }
 }

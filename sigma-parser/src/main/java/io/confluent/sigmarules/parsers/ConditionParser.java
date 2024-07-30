@@ -21,12 +21,13 @@ package io.confluent.sigmarules.parsers;
 
 import io.confluent.sigmarules.models.ConditionsManager;
 import io.confluent.sigmarules.models.SigmaCondition;
-import java.text.CharacterIterator;
-import java.text.StringCharacterIterator;
-import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.text.CharacterIterator;
+import java.text.StringCharacterIterator;
+import java.util.List;
 
 public class ConditionParser {
     final static Logger logger = LogManager.getLogger(ConditionParser.class);
@@ -47,6 +48,10 @@ public class ConditionParser {
 
     public ConditionsManager parseCondition(ParsedSigmaRule sigmaRule) {
         ConditionsManager conditionsManager = new ConditionsManager();
+
+        if (sigmaRule.getDetection()==null){
+            return conditionsManager;
+        }
 
         if (sigmaRule.getDetection().containsKey("condition")) {
             String condition = sigmaRule.getDetection().get("condition").toString();

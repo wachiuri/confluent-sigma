@@ -55,9 +55,15 @@ public class SigmaRuleParser implements Serializable {
 
     public SigmaRule parseRule(String rule)
         throws IOException, InvalidSigmaRuleException, SigmaRuleParserException {
-        ParsedSigmaRule parsedSigmaRule = yamlMapper.readValue(rule, ParsedSigmaRule.class);
 
-        return parseRule(parsedSigmaRule);
+        try {
+            ParsedSigmaRule parsedSigmaRule = yamlMapper.readValue(rule, ParsedSigmaRule.class);
+
+            return parseRule(parsedSigmaRule);
+        }
+        catch (Exception e){
+            throw new SigmaRuleParserException(e);
+        }
     }
 
     public SigmaRule parseRule(ParsedSigmaRule parsedSigmaRule)

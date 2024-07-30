@@ -21,5 +21,10 @@ package io.confluent.sigmarules.exceptions;
 
 public class SigmaRuleParserException extends Throwable {
     public SigmaRuleParserException(String s) {
+        super(s);
+    }
+
+    public SigmaRuleParserException(Throwable e){
+        super(e);
     }
 }

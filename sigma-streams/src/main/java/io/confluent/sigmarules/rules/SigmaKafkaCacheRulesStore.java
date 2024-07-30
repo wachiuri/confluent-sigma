@@ -37,6 +37,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -63,7 +64,7 @@ public class SigmaKafkaCacheRulesStore implements SigmaRulesStore {
         FieldMapper fieldMapFile = null;
         try {
             if (properties.containsKey("field.mapping.file"))
-                fieldMapFile = new FieldMapper(properties.getProperty("field.mapping.file"));
+                fieldMapFile = new FieldMapper(Path.of(properties.getProperty("field.mapping.file")));
         } catch (IllegalArgumentException | IOException e) {
             logger.info("no field mapping file provided");
         }

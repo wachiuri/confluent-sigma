@@ -46,9 +46,6 @@ public class SigmaWindowedStreamAccumulator implements Accumulator<Tuple2<Object
 
     @Override
     public void add(Tuple2<ObjectNode, SigmaRule> value) {
-
-        logger.info("accumulating {} {}", value, localValue);
-
         try {
 
             localValue.f0 = value.f1;
@@ -120,8 +117,6 @@ public class SigmaWindowedStreamAccumulator implements Accumulator<Tuple2<Object
         } catch (Exception e) {
 
         }
-
-        logger.info("new local value {}", localValue);
     }
 
     @Override

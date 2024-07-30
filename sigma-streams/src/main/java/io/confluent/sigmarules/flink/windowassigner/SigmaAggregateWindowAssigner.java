@@ -24,7 +24,6 @@ public class SigmaAggregateWindowAssigner extends WindowAssigner<Tuple2<ObjectNo
     @Override
     public Collection<TimeWindow> assignWindows(Tuple2<ObjectNode, SigmaRule> element, long timestamp, WindowAssignerContext context) {
 
-        logger.info("Assigning window for element " + element);
         long size = element.f1.getDetectionsManager().getWindowTimeMS();
         long globalOffset = 0;
         WindowStagger windowStagger = WindowStagger.ALIGNED;
@@ -50,7 +49,6 @@ public class SigmaAggregateWindowAssigner extends WindowAssigner<Tuple2<ObjectNo
             element.f0.put("window", start + "-" + (start + size));
             element.f0.put("windowStart", start);
             element.f0.put("windowEnd", start + size);
-            logger.info("window {}", start + "-" + (start + size));
             return Collections.singletonList(new TimeWindow(start, start + size));
         } else {
             throw new RuntimeException(
