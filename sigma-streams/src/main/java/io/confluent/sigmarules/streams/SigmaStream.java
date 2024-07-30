@@ -163,7 +163,7 @@ public class SigmaStream extends StreamManager {
         SingleOutputStreamOperator<ObjectNode> dataStream;
         SingleOutputStreamOperator<String> ruleStringStream;
 
-        if (System.getenv("SPRING_PROFILES_ACTIVE").equals("local")) {
+        if (System.getenv("SPRING_PROFILES_ACTIVE").equals("local.disabled")) {
             FileSource<String> dataSource = FileSource.forRecordStreamFormat(
                             new TextLineInputFormat(),
                             new Path("D:\\tmp\\sigma\\data")

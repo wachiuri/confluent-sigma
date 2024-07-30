@@ -5,6 +5,7 @@ import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
 import org.apache.http.HttpHost;
+import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexResponse;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
@@ -84,9 +85,19 @@ public class Elasticsearch5Sink<T> implements Sink<T>, Serializable {
                 String jsonString = new ObjectMapper().writeValueAsString(element);
                 indexRequest.source(jsonString, XContentType.JSON);
 
-                IndexResponse response = restHighLevelClient.index(indexRequest);
+                restHighLevelClient.indexAsync(indexRequest, new ActionListener<IndexResponse>() {
+                    @Override
+                    public void onResponse(IndexResponse indexResponse) {
+                        logger.info("elasticsearch response {}", indexResponse);
+                    }
 
-                logger.info("response {}", response);
+                    @Override
+                    public void onFailure(Exception e) {
+                        logger.error("Error writing to elasticsearch", e);
+                    }
+                });
+
+
             }
 
             @Override
